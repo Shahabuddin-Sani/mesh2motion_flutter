@@ -227,12 +227,11 @@ class TopToolbar extends StatelessWidget {
       if (bytes != null) {
         M2MResourceManager.instance.registerBuffer(name, bytes);
         M2MLogger.info('TopToolbar: Registered memory buffer for $name');
-        // User's own model: no animation GLBs. They pick skeleton separately.
-        await scene.loadModelFromPath(name, [], provider);
+        await scene.loadModelFromPath(name, provider);
         provider.loadModel(name, name);
       } else if (path != null) {
         M2MLogger.info('TopToolbar: Loading model from local path: $path');
-        await scene.loadModelFromPath(path, [], provider);
+        await scene.loadModelFromPath(path, provider);
         provider.loadModel(path, name);
       } else {
         throw Exception('No data or path available for the picked file');

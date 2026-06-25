@@ -1,8 +1,7 @@
-import 'package:flutter/material.dart'; 
-import 'package:provider/provider.dart';
-
+import 'package:flutter/material.dart';
 import '../models/editor_state.dart';
 import '../theme/app_theme.dart';
+import 'package:provider/provider.dart';
 
 class RightPanel extends StatefulWidget {
   const RightPanel({super.key});
@@ -182,7 +181,6 @@ class _LibraryTab extends StatelessWidget {
     final selectedType = state.selectedSkeleton;
 
     final available = kAnimationLibrary.where((a) {
-      // If a skeleton is selected, only show compatible animations
       if (selectedType != null && !a.compatibleWith.contains(selectedType)) {
         return false;
       }

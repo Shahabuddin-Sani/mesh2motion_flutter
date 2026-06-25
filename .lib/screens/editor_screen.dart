@@ -24,7 +24,6 @@ class _EditorScreenState extends State<EditorScreen> {
   bool _sceneReady = false;
   EditorProvider? _provider;
   String? _lastLoadedPath;
-  SkeletonType? _lastSkeleton;
 
   @override
   void initState() {
@@ -39,11 +38,6 @@ class _EditorScreenState extends State<EditorScreen> {
       if (mounted) {
         _provider = Provider.of<EditorProvider>(context, listen: false);
         _provider!.addListener(_onProviderStateChanged);
-        
-        // Auto-select human skeleton on first load
-        if (_provider!.state.selectedSkeleton == null) {
-          _provider!.selectSkeleton(SkeletonType.human);
-        }
       }
     });
   }
@@ -58,30 +52,12 @@ class _EditorScreenState extends State<EditorScreen> {
     if (!mounted || !_sceneReady) return;
     
     final state = _provider!.state;
-    
-    // Detect skeleton/model change
-    final pathChanged = state.loadedModelPath != _lastLoadedPath;
-    final skeletonChanged = state.selectedSkeleton != _lastSkeleton;
-    
-    if ((pathChanged || skeletonChanged) && state.loadedModelPath != null) {
-      M2MLogger.info('EditorScreen: Model/skeleton changed → loading ${state.loadedModelPath}');
+    if (state.loadedModelPath != _lastLoadedPath) {
+      M2MLogger.info('EditorScreen: Model path changed in state: ${state.loadedModelPath}');
       _lastLoadedPath = state.loadedModelPath;
-      _lastSkeleton = state.selectedSkeleton;
-      
-      // Get the animation GLBs for the selected skeleton
-      List<String> animPaths = [];
-      if (state.selectedSkeleton != null) {
-        final assets = kSkeletonAssets[state.selectedSkeleton!];
-        if (assets != null) {
-          animPaths = assets.animGlbs;
-        }
+      if (_lastLoadedPath != null) {
+        _scene.loadModelFromPath(_lastLoadedPath!, _provider!);
       }
-      
-      _scene.loadModelFromPath(
-        state.loadedModelPath!,
-        animPaths,
-        _provider!,
-      );
     }
   }
 
@@ -92,6 +68,7 @@ class _EditorScreenState extends State<EditorScreen> {
       M2MLogger.info('EditorScreen: Scene attached to engine');
       if (mounted) {
         setState(() => _sceneReady = true);
+        // Check if there's already a model to load
         _onProviderStateChanged();
       }
     } catch (e, stack) {
@@ -138,12 +115,12 @@ class _EditorScreenState extends State<EditorScreen> {
               child: Row(
                 children: [
                   // ── Vertical Tools Bar ────────────────────────────────────
-                  _VerticalToolsBar(),
+                  const _VerticalToolsBar(),
 
                   // ── Left Column: Hierarchy ────────────────────────────────
                   const SizedBox(
                     width: 200,
-                    child: LeftPanel(),
+                    child: LeftPanel(), // Updated LeftPanel to be the Hierarchy
                   ),
 
                   // ── 3D Viewport ───────────────────────────────────────────
@@ -174,24 +151,26 @@ class _EditorScreenState extends State<EditorScreen> {
 
                         const ViewportOverlay(),
 
+                        if (editorState.phase == EditorPhase.empty)
+                          const _EmptyViewportCTA(),
+
                         if (editorState.isBusy)
                           BusyOverlay(message: editorState.busyMessage ?? 'Working…'),
                       ],
                     ),
                   ),
 
-                  // ── Right Column: Properties & Library ─────────────────────
+                  // ── Right Column: Properties & Assets ─────────────────────
                   const SizedBox(
                     width: 300,
-                    child: RightPanel(),
+                    child: RightPanel(), // Updated RightPanel to be Inspector + Library
                   ),
                 ],
               ),
             ),
 
             // ── Bottom Timeline ───────────────────────────────────────────────
-            // Show timeline whenever an animation is active, regardless of phase
-            if (editorState.activeAnimation != null)
+            if (editorState.phase.index >= EditorPhase.animated.index)
               const BottomTimeline(),
           ],
         ),
@@ -201,6 +180,8 @@ class _EditorScreenState extends State<EditorScreen> {
 }
 
 class _VerticalToolsBar extends StatelessWidget {
+  const _VerticalToolsBar();
+
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<EditorProvider>();
@@ -300,6 +281,27 @@ class _ToolIcon extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _EmptyViewportCTA extends StatelessWidget {
+  const _EmptyViewportCTA();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.add_box_outlined, size: 48, color: AppTheme.textMuted.withValues(alpha: 0.3)),
+          const SizedBox(height: 16),
+          Text(
+            'Load a model to start editing',
+            style: TextStyle(color: AppTheme.textMuted.withValues(alpha: 0.5), fontSize: 14),
+          ),
+        ],
       ),
     );
   }

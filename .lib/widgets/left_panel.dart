@@ -29,8 +29,9 @@ class LeftPanel extends StatelessWidget {
             child: _HierarchyTree(state: state),
           ),
           
-          // ── Skeleton Selector (always visible) ───────────────────────────
-          _SkeletonFittingSection(state: state),
+          // ── Skeleton Fitting (if applicable) ──────────────────────────────
+          if (state.phase == EditorPhase.modelLoaded)
+            _SkeletonFittingSection(state: state),
         ],
       ),
     );
@@ -191,7 +192,7 @@ class _SkeletonFittingSection extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const Text(
-            'SKELETON',
+            'SKELETON FITTING',
             style: TextStyle(
               color: AppTheme.textMuted,
               fontSize: 9,
@@ -209,14 +210,13 @@ class _SkeletonFittingSection extends StatelessWidget {
                 border: Border.all(color: AppTheme.borderColor),
               ),
               child: DropdownButton<SkeletonType>(
-                value: state.selectedSkeleton,
-                hint: const Text('Select skeleton…', style: TextStyle(color: AppTheme.textMuted, fontSize: 11)),
+                value: state.selectedSkeleton ?? SkeletonType.human,
                 dropdownColor: AppTheme.bgCard,
                 isExpanded: true,
                 style: const TextStyle(color: AppTheme.textPrimary, fontSize: 11),
                 items: SkeletonType.values.map((t) => DropdownMenuItem(
                   value: t,
-                  child: Text('${t.icon}  ${t.label}'),
+                  child: Text(t.label),
                 )).toList(),
                 onChanged: (v) => v != null ? provider.selectSkeleton(v) : null,
               ),
@@ -224,17 +224,14 @@ class _SkeletonFittingSection extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           ElevatedButton(
-            onPressed: () {
-              final sel = state.selectedSkeleton;
-              if (sel != null) provider.selectSkeleton(sel);
-            },
+            onPressed: () => provider.fitSkeleton(),
             style: ElevatedButton.styleFrom(
               backgroundColor: AppTheme.accent,
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 10),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
             ),
-            child: const Text('LOAD SKELETON', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+            child: const Text('AUTO FIT SKELETON', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
           ),
         ],
       ),

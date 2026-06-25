@@ -9,10 +9,6 @@ import '../engine/m2m_engine.dart';
 
 // ignore: implementation_imports
 import 'package:macbear_3d/src/gltf/gltf_parser.dart';
-// ignore: implementation_imports
-import 'package:macbear_3d/src/mesh/animator.dart';
-// ignore: implementation_imports
-import 'package:macbear_3d/src/gltf/gltf_loader.dart';
 
 /// The main 3D scene that renders the loaded model, skeleton overlay,
 /// and handles viewport camera interaction.
@@ -27,6 +23,9 @@ class Mesh2MotionScene extends M3Scene {
 
   // Grid floor
   M3Entity? _gridEntity;
+
+  // Camera entity (visual representation)
+  M3Entity? _cameraGizmo;
 
   // State refs
   bool showSkeleton = true;
@@ -60,7 +59,9 @@ class Mesh2MotionScene extends M3Scene {
 
     // ─── Grid Floor ───────────────────────────────────────────────────────────
     _buildGrid();
-    // NOTE: No camera gizmo — it clutters the viewport unnecessarily.
+    
+    // ─── Camera Gizmo ─────────────────────────────────────────────────────────
+    _buildCameraGizmo();
   }
 
   void _buildGrid() {
@@ -72,13 +73,19 @@ class Mesh2MotionScene extends M3Scene {
     addEntity(_gridEntity!);
   }
 
-  /// Load a GLB/glTF model from [path], then load animation GLBs from [animPaths]
-  /// and inject their animations into the model's animator.
-  Future<void> loadModelFromPath(
-    String path,
-    List<String> animPaths,
-    EditorProvider provider,
-  ) async {
+  void _buildCameraGizmo() {
+    final camGeom = M3BoxGeom(0.2, 0.2, 0.4);
+    final camMesh = M3Mesh(camGeom);
+    _cameraGizmo = M3Entity()..mesh = camMesh;
+    _cameraGizmo!.color = vm.Vector4(1.0, 1.0, 0.0, 0.8);
+    // Note: M3Entity visibility is usually handled by presence in scene,
+    // but if it has a visible flag, we use it. If not, we'll just not add it yet.
+    // _cameraGizmo!.isVisible = false; 
+    addEntity(_cameraGizmo!);
+  }
+
+  /// Load a GLB/glTF model from [path].
+  Future<void> loadModelFromPath(String path, EditorProvider provider) async {
     M2MLogger.info('Scene: Loading model from $path');
     if (_modelEntity != null) {
       entities.remove(_modelEntity!);
@@ -94,13 +101,8 @@ class Mesh2MotionScene extends M3Scene {
       _fixModelOrientation(_modelEntity!);
       _fitModelInView(_modelEntity!);
       
-      M2MLogger.info('Scene: Model loaded with ${mesh.nodes?.length ?? 0} nodes, animator=${mesh.animator != null}');
-
-      // Load animation GLBs and inject their animations
-      if (animPaths.isNotEmpty) {
-        await _loadAndInjectAnimations(mesh, animPaths);
-      }
-
+      M2MLogger.info('Scene: Model loaded with ${mesh.nodes?.length ?? 0} nodes');
+      
       // Sync hierarchy with provider
       final List<SceneNode> sceneNodes = [
         const SceneNode(id: 'grid', name: 'Grid Floor', type: 'grid'),
@@ -108,94 +110,41 @@ class Mesh2MotionScene extends M3Scene {
         const SceneNode(id: 'light', name: 'Directional Light', type: 'light'),
       ];
 
-      const modelNodeId = 'model_root';
-      sceneNodes.add(SceneNode(
-        id: modelNodeId,
-        name: provider.state.loadedModelName ?? '3D Model',
-        type: 'model',
-      ));
+      final modelNodeId = 'model_root';
+      sceneNodes.add(SceneNode(id: modelNodeId, name: '3D Model', type: 'model'));
 
       if (mesh.nodes != null) {
         for (final node in mesh.nodes!) {
-          if (node.name.isNotEmpty) {
-            sceneNodes.add(SceneNode(
-              id: node.name,
-              name: node.name,
-              type: 'bone',
-              parentId: modelNodeId,
-            ));
-          }
+          sceneNodes.add(SceneNode(
+            id: node.name,
+            name: node.name,
+            type: 'bone',
+            parentId: modelNodeId, // Flatten for now since GltfNode lacks parent ref
+          ));
         }
       }
       
       provider.setSceneNodes(sceneNodes);
-      provider.clearBusy();
       
-      // Rebuild gizmos if skeleton is enabled
+      // Initially rebuild gizmos if skeleton is enabled
       rebuildBoneGizmos();
     } catch (e, stack) {
       M2MLogger.error('Scene: Error loading model', e, stack);
-      provider.clearBusy();
-    }
-  }
-
-  /// Load each animation GLB and merge its animations into the model mesh's animator.
-  Future<void> _loadAndInjectAnimations(M3Mesh targetMesh, List<String> animPaths) async {
-    final List<GltfAnimation> allAnimations = [];
-
-    for (final animPath in animPaths) {
-      try {
-        M2MLogger.info('Scene: Loading animations from $animPath');
-        final buffer = await M2MEngine.instance.loadRawBuffer(animPath);
-        final doc = await M3GltfLoader.loadFromBytes(buffer, animPath);
-
-        if (doc.animations.isNotEmpty) {
-          M2MLogger.info('Scene: Found ${doc.animations.length} animations in $animPath');
-          allAnimations.addAll(doc.animations.cast<GltfAnimation>());
-        }
-      } catch (e) {
-        M2MLogger.warning('Scene: Failed to load anim GLB $animPath: $e');
-      }
-    }
-
-    if (allAnimations.isEmpty) {
-      M2MLogger.warning('Scene: No animations found in any anim GLB');
-      return;
-    }
-
-    // Build a node map from the model (the animation GLBs reference bones by index/name)
-    final nodeMap = <int, GltfNode>{};
-    if (targetMesh.nodes != null) {
-      for (int i = 0; i < targetMesh.nodes!.length; i++) {
-        nodeMap[i] = targetMesh.nodes![i];
-      }
-    }
-
-    // Inject animator into the mesh
-    targetMesh.animator = M3Animator(allAnimations, nodeMap);
-    targetMesh.animator!.isPlaying = false;
-
-    M2MLogger.info('Scene: Injected ${allAnimations.length} animations into model');
-    for (int i = 0; i < allAnimations.length; i++) {
-      M2MLogger.info('  [$i] ${allAnimations[i].name}');
     }
   }
 
   void _fixModelOrientation(M3Entity entity) {
-    // GLTFs exported from Blender with Y-up are correct as-is for macbear_3d.
-    // Blender default export with Z-up makes models appear lying down.
-    // We detect this and auto-rotate.
-    entity.updateBounds();
-    final bounds = entity.worldBounding.aabb;
-    final size = bounds.max - bounds.min;
+    // GLTF is Y-up. If the model appears lying down, we rotate it.
+    // User wants it standing on Z axis? Usually that means Z is up.
+    // But macbear_3d is Y-up. So "standing" should be along Y.
     
-    // If the model is very flat on Y (lying on its side/back) but tall on Z,
-    // it's likely Z-up — rotate -90° around X to stand it up.
-    if (size.z > size.y * 1.5 && size.z > size.x * 1.5) {
-      M2MLogger.info('Scene: Detected Z-up model (size: ${size.x.toStringAsFixed(2)}, ${size.y.toStringAsFixed(2)}, ${size.z.toStringAsFixed(2)}), auto-rotating to Y-up');
+    entity.updateBounds();
+    final size = entity.worldBounding.aabb.max - entity.worldBounding.aabb.min;
+    
+    // If Z is significantly larger than Y, it's likely a Z-up model lying on its back
+    if (size.z > size.y * 1.2) {
+      M2MLogger.info('Scene: Detected Z-up model, auto-rotating to Y-up');
       entity.matrix.setRotationX(-pi / 2);
-    } else {
-      M2MLogger.info('Scene: Model orientation looks correct (size: ${size.x.toStringAsFixed(2)}, ${size.y.toStringAsFixed(2)}, ${size.z.toStringAsFixed(2)})');
     }
   }
 
@@ -210,7 +159,7 @@ class Mesh2MotionScene extends M3Scene {
       entity.scale = vm.Vector3.all(scale);
       
       final center = (bounds.max + bounds.min) / 2;
-      // Place with feet on the grid (Y=0)
+      // Position on the grid floor (Y=0)
       entity.position = vm.Vector3(-center.x * scale, -bounds.min.y * scale, -center.z * scale);
     }
   }
@@ -224,14 +173,20 @@ class Mesh2MotionScene extends M3Scene {
 
     final nodes = _modelEntity!.mesh!.nodes!;
     for (final node in nodes) {
-      if (node.name.isEmpty) continue;
+      // Only create gizmos for nodes that look like bones or are explicitly in the skeleton
+      final name = node.name.toLowerCase();
+      bool isBone = name.contains('bone') || 
+                   name.contains('joint') || 
+                   bones.any((b) => b.name.toLowerCase() == name || b.id.toLowerCase() == name);
+      
+      if (!isBone && nodes.length > 50) continue; // Optimization: don't show everything if too many nodes
 
       final gizmoGeom = M3SphereGeom(0.015);
       final gizmoMesh = M3Mesh(gizmoGeom);
       final gizmo = M3Entity()..mesh = gizmoMesh;
       
       final isSelected = (selectedNodeId != null && 
-                         node.name == selectedNodeId);
+                         (name == selectedNodeId!.toLowerCase() || node.name == selectedNodeId));
       
       gizmo.color = isSelected
           ? vm.Vector4(1.0, 0.6, 0.0, 1.0) 
@@ -247,27 +202,37 @@ class Mesh2MotionScene extends M3Scene {
 
   void _updateGizmoPositions() {
     if (_modelEntity == null || _nodeToGizmo.isEmpty) return;
-    if (_modelEntity!.mesh?.nodes == null) return;
 
-    final modelPos = _modelEntity!.position;
+    final modelMatrix = _modelEntity!.matrix;
     final modelScale = _modelEntity!.scale.x;
-    final modelRot = _modelEntity!.matrix.getRotation();
+    final modelPos = _modelEntity!.position;
 
     for (final node in _modelEntity!.mesh!.nodes!) {
       final gizmo = _nodeToGizmo[node.name];
       if (gizmo == null) continue;
 
-      // Get local-space translation of node
-      vm.Vector3 localPos;
-      if (node.matrix != null) {
-        localPos = node.matrix!.getTranslation();
-      } else {
-        localPos = node.translation;
-      }
-
+      // Calculate world position of node
+      final vm.Matrix4 nodeWorldMatrix = _getNodeWorldMatrix(node);
+      final worldPos = (nodeWorldMatrix * vm.Vector4(0, 0, 0, 1.0)).xyz;
+      
       // Apply model-level transform
-      gizmo.position = modelPos + (modelRot * localPos) * modelScale;
+      gizmo.position = modelPos + (modelMatrix.getRotation() * worldPos) * modelScale;
     }
+  }
+
+  vm.Matrix4 _getNodeWorldMatrix(GltfNode node) {
+    final vm.Matrix4 m = vm.Matrix4.identity();
+    if (node.matrix != null) {
+      final vm.Matrix4 nodeMat = vm.Matrix4.fromList(node.matrix!.storage);
+      m.multiply(nodeMat);
+    } else {
+      m.setFrom(vm.Matrix4.compose(node.translation, node.rotation, node.scale));
+    }
+      
+    final vm.Matrix4 world = vm.Matrix4.fromList(_modelEntity!.matrix.storage);
+    world.multiply(m);
+      
+    return world;
   }
 
   void clearBoneGizmos() {
@@ -289,36 +254,28 @@ class Mesh2MotionScene extends M3Scene {
         int idx = -1;
         final target = animId.toLowerCase();
         
-        // Exact match first
         for (int i = 0; i < animator.animations.length; i++) {
-          if (animator.animations[i].name.toLowerCase() == target) {
+          final animName = animator.animations[i].name.toLowerCase();
+          if (animName == target || animName.contains(target) || target.contains(animName)) {
             idx = i;
             break;
           }
         }
         
-        // Partial match fallback
-        if (idx == -1) {
-          for (int i = 0; i < animator.animations.length; i++) {
-            final animName = animator.animations[i].name.toLowerCase();
-            if (animName.contains(target) || target.contains(animName)) {
-              idx = i;
-              break;
-            }
-          }
-        }
-        
         if (idx != -1) {
-          M2MLogger.info('Scene: Playing animation "${animator.animations[idx].name}" (index $idx)');
+          M2MLogger.info('Scene: Playing animation "$animId" (index $idx)');
           animator.play(idx);
-          animator.isPlaying = isPlaying;
-        } else {
-          M2MLogger.warning('Scene: Animation "$animId" not found. Available: ${animator.animations.map((a) => a.name).join(', ')}');
+          animator.isPlaying = true;
         }
       } else {
         animator.isPlaying = false;
       }
     }
+  }
+
+  void updateWireframe(bool value) {
+    showWireframe = value;
+    // Wireframe support depends on macbear_3d rendering implementation
   }
 
   void updateMaterial(MaterialSettings settings) {
@@ -333,11 +290,13 @@ class Mesh2MotionScene extends M3Scene {
     _cameraPitch = (_cameraPitch + dy * 0.005).clamp(-pi / 2 + 0.1, pi / 2 - 0.1);
     _cameraYaw += dx * 0.005;
     camera.setEuler(_cameraPitch, _cameraYaw, 0, distance: _cameraDist);
+    _updateCameraGizmo();
   }
 
   void zoom(double delta) {
     _cameraDist = (_cameraDist + delta * 0.005).clamp(0.5, 50.0);
     camera.setEuler(_cameraPitch, _cameraYaw, 0, distance: _cameraDist);
+    _updateCameraGizmo();
   }
 
   void pan(double dx, double dy) {
@@ -347,6 +306,19 @@ class Mesh2MotionScene extends M3Scene {
     final factor = _cameraDist * 0.001;
     camera.target += right * (-dx * factor) + up * (dy * factor);
     camera.setEuler(_cameraPitch, _cameraYaw, 0, distance: _cameraDist);
+    _updateCameraGizmo();
+  }
+
+  void _updateCameraGizmo() {
+    if (_cameraGizmo == null) return;
+    // Position gizmo at camera eye
+    final eye = camera.target + (vm.Vector3(
+      _cameraDist * cos(_cameraPitch) * sin(_cameraYaw),
+      _cameraDist * sin(_cameraPitch),
+      _cameraDist * cos(_cameraPitch) * cos(_cameraYaw),
+    ));
+    _cameraGizmo!.position = eye;
+    // _cameraGizmo!.lookAt(camera.target); // If lookAt existed
   }
 
   void resetCamera() {
@@ -355,24 +327,28 @@ class Mesh2MotionScene extends M3Scene {
     _cameraDist = 5.0;
     camera.target = vm.Vector3.zero();
     camera.setEuler(_cameraPitch, _cameraYaw, 0, distance: _cameraDist);
+    _updateCameraGizmo();
   }
 
   void setTopView() {
     _cameraPitch = pi / 2 - 0.01;
     _cameraYaw = 0;
     camera.setEuler(_cameraPitch, _cameraYaw, 0, distance: _cameraDist);
+    _updateCameraGizmo();
   }
 
   void setSideView() {
     _cameraPitch = 0;
     _cameraYaw = pi / 2;
     camera.setEuler(_cameraPitch, _cameraYaw, 0, distance: _cameraDist);
+    _updateCameraGizmo();
   }
 
   void setFrontView() {
     _cameraPitch = 0;
     _cameraYaw = 0;
     camera.setEuler(_cameraPitch, _cameraYaw, 0, distance: _cameraDist);
+    _updateCameraGizmo();
   }
 
   String? pickBone(double screenX, double screenY, double width, double height) {

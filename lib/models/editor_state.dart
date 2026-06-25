@@ -33,7 +33,7 @@ enum SkeletonType {
     boneCount: 24,
   ),
   quadruped(
-    label: 'Quadruped',
+    label: 'Fox / 4-Leg',
     icon: '🐺',
     description: 'Four-legged animal (fox, dog, cat)',
     boneCount: 32,
@@ -49,6 +49,24 @@ enum SkeletonType {
     icon: '🐉',
     description: 'Fantasy creature with wings and tail',
     boneCount: 40,
+  ),
+  kaiju(
+    label: 'Kaiju',
+    icon: '👾',
+    description: 'Giant monster creature',
+    boneCount: 36,
+  ),
+  spider(
+    label: 'Spider',
+    icon: '🕷️',
+    description: 'Eight-legged creature',
+    boneCount: 32,
+  ),
+  snake(
+    label: 'Snake',
+    icon: '🐍',
+    description: 'Limbless serpentine creature',
+    boneCount: 28,
   );
 
   const SkeletonType({
@@ -63,6 +81,48 @@ enum SkeletonType {
   final String description;
   final int boneCount;
 }
+
+/// Maps each skeleton type to its bundled asset GLB paths.
+/// animGlbs lists all animation GLBs to load for that skeleton.
+class SkeletonAssets {
+  final String modelGlb;
+  final List<String> animGlbs;
+  const SkeletonAssets({required this.modelGlb, required this.animGlbs});
+}
+
+const Map<SkeletonType, SkeletonAssets> kSkeletonAssets = {
+  SkeletonType.human: SkeletonAssets(
+    modelGlb: 'assets/models/model-human.glb',
+    animGlbs: [
+      'assets/animations/human-base-animations.glb',
+      'assets/animations/human-addon-animations.glb',
+    ],
+  ),
+  SkeletonType.quadruped: SkeletonAssets(
+    modelGlb: 'assets/models/model-fox.glb',
+    animGlbs: ['assets/animations/fox-animations.glb'],
+  ),
+  SkeletonType.bird: SkeletonAssets(
+    modelGlb: 'assets/models/model-bird.glb',
+    animGlbs: ['assets/animations/bird-animations.glb'],
+  ),
+  SkeletonType.dragon: SkeletonAssets(
+    modelGlb: 'assets/models/model-dragon.glb',
+    animGlbs: ['assets/animations/dragon-animations.glb'],
+  ),
+  SkeletonType.kaiju: SkeletonAssets(
+    modelGlb: 'assets/models/model-kaiju.glb',
+    animGlbs: ['assets/animations/kaiju-animations.glb'],
+  ),
+  SkeletonType.spider: SkeletonAssets(
+    modelGlb: 'assets/models/model-spider.glb',
+    animGlbs: ['assets/animations/spider-animations.glb'],
+  ),
+  SkeletonType.snake: SkeletonAssets(
+    modelGlb: 'assets/models/model-snake.glb',
+    animGlbs: ['assets/animations/snake-animations.glb'],
+  ),
+};
 
 // ─── Animation Entry ──────────────────────────────────────────────────────────
 
@@ -225,12 +285,13 @@ class EditorState {
     bool clearAnimation = false,
     bool clearModel = false,
     bool clearNode = false,
+    bool clearSkeleton = false,
   }) {
     return EditorState(
       phase: phase ?? this.phase,
       loadedModelPath: clearModel ? null : (loadedModelPath ?? this.loadedModelPath),
       loadedModelName: clearModel ? null : (loadedModelName ?? this.loadedModelName),
-      selectedSkeleton: selectedSkeleton ?? this.selectedSkeleton,
+      selectedSkeleton: clearSkeleton ? null : (selectedSkeleton ?? this.selectedSkeleton),
       activeAnimation: clearAnimation ? null : (activeAnimation ?? this.activeAnimation),
       activeTool: activeTool ?? this.activeTool,
       showSkeleton: showSkeleton ?? this.showSkeleton,
@@ -267,8 +328,8 @@ class EditorProvider extends ChangeNotifier {
   void loadModel(String path, String name) {
     M2MLogger.info('Loading model: $name from $path');
     
-    // Create hierarchy with a model root and a placeholder for bones
-    final newNodes = List<SceneNode>.from(_state.sceneNodes);
+    final newNodes = List<SceneNode>.from(_state.sceneNodes
+        .where((n) => n.type != 'model' && n.type != 'bone'));
     final modelNode = SceneNode(id: 'model_root', name: name, type: 'model');
     newNodes.add(modelNode);
     
@@ -279,6 +340,7 @@ class EditorProvider extends ChangeNotifier {
       sceneNodes: newNodes,
       selectedNodeId: 'model_root',
       isBusy: false,
+      clearAnimation: true,
     ));
   }
 
@@ -296,16 +358,45 @@ class EditorProvider extends ChangeNotifier {
     _updateState(_state.copyWith(isBusy: false, busyMessage: ''));
   }
 
+  /// Select a skeleton type. This triggers loading the bundled mannequin model
+  /// for that skeleton type (handled by EditorScreen listener).
   void selectSkeleton(SkeletonType type) {
     M2MLogger.info('Selecting skeleton: ${type.label}');
+    final assets = kSkeletonAssets[type]!;
+    final modelName = _skeletonDisplayName(type);
+    
+    // Update the scene nodes to reflect the new model
+    final baseNodes = [
+      const SceneNode(id: 'grid', name: 'Grid Floor', type: 'grid'),
+      const SceneNode(id: 'camera', name: 'Main Camera', type: 'camera'),
+      const SceneNode(id: 'light', name: 'Directional Light', type: 'light'),
+      SceneNode(id: 'model_root', name: modelName, type: 'model'),
+    ];
+
     _updateState(_state.copyWith(
       selectedSkeleton: type,
-      phase: _state.phase.index >= EditorPhase.modelLoaded.index
-          ? EditorPhase.skeletonFitted
-          : _state.phase,
+      loadedModelPath: assets.modelGlb,
+      loadedModelName: modelName,
+      phase: EditorPhase.skeletonFitted,
+      sceneNodes: baseNodes,
+      selectedNodeId: 'model_root',
+      clearAnimation: true,
+      isBusy: true,
+      busyMessage: 'Loading ${type.label} skeleton…',
     ));
     M2MLogger.state('skeleton', type.label);
-    M2MLogger.state('phase', _state.phase);
+  }
+
+  String _skeletonDisplayName(SkeletonType type) {
+    switch (type) {
+      case SkeletonType.human: return 'Mannequin';
+      case SkeletonType.quadruped: return 'Fox';
+      case SkeletonType.bird: return 'Bird';
+      case SkeletonType.dragon: return 'Dragon';
+      case SkeletonType.kaiju: return 'Kaiju';
+      case SkeletonType.spider: return 'Spider';
+      case SkeletonType.snake: return 'Snake';
+    }
   }
 
   void fitSkeleton() {
@@ -393,36 +484,92 @@ class EditorProvider extends ChangeNotifier {
 }
 
 // ─── Animation Library Data ───────────────────────────────────────────────────
+// Animation names match what is stored in the bundled GLB files.
+// The 'id' is used to look up the animation by name in the GLB animator.
 
 const List<AnimationEntry> kAnimationLibrary = [
-  // Human
-  AnimationEntry(id: 'idle',          name: 'Idle',           category: 'Basic',      durationSecs: 3.0,  compatibleWith: [SkeletonType.human]),
-  AnimationEntry(id: 'walk',          name: 'Walk',           category: 'Locomotion', durationSecs: 1.2,  compatibleWith: [SkeletonType.human]),
-  AnimationEntry(id: 'run',           name: 'Run',            category: 'Locomotion', durationSecs: 0.8,  compatibleWith: [SkeletonType.human]),
-  AnimationEntry(id: 'jump',          name: 'Jump',           category: 'Locomotion', durationSecs: 1.5,  compatibleWith: [SkeletonType.human]),
-  AnimationEntry(id: 'wave',          name: 'Wave',           category: 'Gestures',   durationSecs: 2.0,  compatibleWith: [SkeletonType.human]),
-  AnimationEntry(id: 'punch',         name: 'Punch',          category: 'Combat',     durationSecs: 0.6,  compatibleWith: [SkeletonType.human]),
-  AnimationEntry(id: 'kick',          name: 'Kick',           category: 'Combat',     durationSecs: 0.7,  compatibleWith: [SkeletonType.human]),
-  AnimationEntry(id: 'dance',         name: 'Dance',          category: 'Emotes',     durationSecs: 4.0,  compatibleWith: [SkeletonType.human]),
-  AnimationEntry(id: 'sit',           name: 'Sit',            category: 'Basic',      durationSecs: 1.0,  compatibleWith: [SkeletonType.human]),
-  AnimationEntry(id: 'crouch',        name: 'Crouch',         category: 'Locomotion', durationSecs: 0.5,  compatibleWith: [SkeletonType.human]),
-  // Quadruped
-  AnimationEntry(id: 'q_idle',        name: 'Idle',           category: 'Basic',      durationSecs: 3.0,  compatibleWith: [SkeletonType.quadruped]),
-  AnimationEntry(id: 'q_walk',        name: 'Walk',           category: 'Locomotion', durationSecs: 1.0,  compatibleWith: [SkeletonType.quadruped]),
-  AnimationEntry(id: 'q_trot',        name: 'Trot',           category: 'Locomotion', durationSecs: 0.8,  compatibleWith: [SkeletonType.quadruped]),
-  AnimationEntry(id: 'q_gallop',      name: 'Gallop',         category: 'Locomotion', durationSecs: 0.5,  compatibleWith: [SkeletonType.quadruped]),
-  AnimationEntry(id: 'q_sit',         name: 'Sit',            category: 'Basic',      durationSecs: 1.5,  compatibleWith: [SkeletonType.quadruped]),
-  AnimationEntry(id: 'q_attack',      name: 'Attack',         category: 'Combat',     durationSecs: 0.8,  compatibleWith: [SkeletonType.quadruped]),
-  // Bird
-  AnimationEntry(id: 'b_idle',        name: 'Idle',           category: 'Basic',      durationSecs: 2.0,  compatibleWith: [SkeletonType.bird]),
-  AnimationEntry(id: 'b_flap',        name: 'Flap',           category: 'Locomotion', durationSecs: 0.6,  compatibleWith: [SkeletonType.bird]),
-  AnimationEntry(id: 'b_glide',       name: 'Glide',          category: 'Locomotion', durationSecs: 3.0,  compatibleWith: [SkeletonType.bird]),
-  AnimationEntry(id: 'b_land',        name: 'Land',           category: 'Basic',      durationSecs: 1.2,  compatibleWith: [SkeletonType.bird]),
-  // Dragon
-  AnimationEntry(id: 'd_idle',        name: 'Idle',           category: 'Basic',      durationSecs: 4.0,  compatibleWith: [SkeletonType.dragon]),
-  AnimationEntry(id: 'd_walk',        name: 'Walk',           category: 'Locomotion', durationSecs: 1.2,  compatibleWith: [SkeletonType.dragon]),
-  AnimationEntry(id: 'd_fly',         name: 'Fly',            category: 'Locomotion', durationSecs: 1.0,  compatibleWith: [SkeletonType.dragon]),
-  AnimationEntry(id: 'd_roar',        name: 'Roar',           category: 'Emotes',     durationSecs: 2.5,  compatibleWith: [SkeletonType.dragon]),
-  AnimationEntry(id: 'd_breathe',     name: 'Breathe Fire',   category: 'Combat',     durationSecs: 2.0,  compatibleWith: [SkeletonType.dragon]),
-  AnimationEntry(id: 'd_land',        name: 'Land',           category: 'Basic',      durationSecs: 2.0,  compatibleWith: [SkeletonType.dragon]),
+  // ── Human – base animations ─────────────────────────────────────────────
+  AnimationEntry(id: 'Idle_Loop',           name: 'Idle',               category: 'Basic',      durationSecs: 3.0,  compatibleWith: [SkeletonType.human]),
+  AnimationEntry(id: 'Sitting_Idle_Loop',   name: 'Sit',                category: 'Basic',      durationSecs: 1.5,  compatibleWith: [SkeletonType.human]),
+  AnimationEntry(id: 'Crouch_Idle_Loop',    name: 'Crouch Idle',        category: 'Basic',      durationSecs: 2.0,  compatibleWith: [SkeletonType.human]),
+  AnimationEntry(id: 'Jump_Start',          name: 'Jump Start',         category: 'Basic',      durationSecs: 0.5,  compatibleWith: [SkeletonType.human]),
+  AnimationEntry(id: 'Jump_Loop',           name: 'Jump Loop',          category: 'Basic',      durationSecs: 0.8,  compatibleWith: [SkeletonType.human]),
+  AnimationEntry(id: 'Jump_Land',           name: 'Land',               category: 'Basic',      durationSecs: 1.2,  compatibleWith: [SkeletonType.human]),
+  AnimationEntry(id: 'Walk_Loop',           name: 'Walk',               category: 'Locomotion', durationSecs: 1.2,  compatibleWith: [SkeletonType.human]),
+  AnimationEntry(id: 'Jog_Fwd_Loop',        name: 'Jog',                category: 'Locomotion', durationSecs: 0.8,  compatibleWith: [SkeletonType.human]),
+  AnimationEntry(id: 'Sprint_Loop',         name: 'Sprint',             category: 'Locomotion', durationSecs: 0.6,  compatibleWith: [SkeletonType.human]),
+  AnimationEntry(id: 'Crouch_Fwd_Loop',     name: 'Crouch Walk',        category: 'Locomotion', durationSecs: 1.5,  compatibleWith: [SkeletonType.human]),
+  AnimationEntry(id: 'Roll',                name: 'Roll',               category: 'Locomotion', durationSecs: 0.9,  compatibleWith: [SkeletonType.human]),
+  AnimationEntry(id: 'Punch_Jab',           name: 'Jab',                category: 'Combat',     durationSecs: 0.4,  compatibleWith: [SkeletonType.human]),
+  AnimationEntry(id: 'Punch_Cross',         name: 'Cross',              category: 'Combat',     durationSecs: 0.5,  compatibleWith: [SkeletonType.human]),
+  AnimationEntry(id: 'Melee_Hook',          name: 'Hook',               category: 'Combat',     durationSecs: 0.6,  compatibleWith: [SkeletonType.human]),
+  AnimationEntry(id: 'Sword_Attack',        name: 'Sword Attack',       category: 'Combat',     durationSecs: 0.8,  compatibleWith: [SkeletonType.human]),
+  AnimationEntry(id: 'Sword_Block',         name: 'Sword Block',        category: 'Combat',     durationSecs: 0.6,  compatibleWith: [SkeletonType.human]),
+  AnimationEntry(id: 'Pistol_Shoot',        name: 'Shoot',              category: 'Combat',     durationSecs: 0.5,  compatibleWith: [SkeletonType.human]),
+  AnimationEntry(id: 'Death01',             name: 'Death',              category: 'Combat',     durationSecs: 2.0,  compatibleWith: [SkeletonType.human]),
+  AnimationEntry(id: 'Hit_Chest',           name: 'Hit Chest',          category: 'Combat',     durationSecs: 0.5,  compatibleWith: [SkeletonType.human]),
+  AnimationEntry(id: 'Dance_Loop',          name: 'Dance',              category: 'Emotes',     durationSecs: 4.0,  compatibleWith: [SkeletonType.human]),
+  AnimationEntry(id: 'Greeting',            name: 'Wave',               category: 'Emotes',     durationSecs: 2.0,  compatibleWith: [SkeletonType.human]),
+  AnimationEntry(id: 'Bow',                 name: 'Bow',                category: 'Emotes',     durationSecs: 1.5,  compatibleWith: [SkeletonType.human]),
+  AnimationEntry(id: 'Victory',             name: 'Victory',            category: 'Emotes',     durationSecs: 2.0,  compatibleWith: [SkeletonType.human]),
+  AnimationEntry(id: 'Angry',              name: 'Angry',               category: 'Emotes',     durationSecs: 2.0,  compatibleWith: [SkeletonType.human]),
+  AnimationEntry(id: 'Idle_Talking_Loop',   name: 'Talk',               category: 'Emotes',     durationSecs: 3.0,  compatibleWith: [SkeletonType.human]),
+  AnimationEntry(id: 'Meditate',            name: 'Meditate',           category: 'Emotes',     durationSecs: 3.0,  compatibleWith: [SkeletonType.human]),
+  AnimationEntry(id: 'Sleeping',            name: 'Sleeping',           category: 'Emotes',     durationSecs: 5.0,  compatibleWith: [SkeletonType.human]),
+  AnimationEntry(id: 'Tired',              name: 'Tired',               category: 'Emotes',     durationSecs: 2.0,  compatibleWith: [SkeletonType.human]),
+  AnimationEntry(id: 'Swim_Fwd_Loop',       name: 'Swim',               category: 'Special',    durationSecs: 1.5,  compatibleWith: [SkeletonType.human]),
+  AnimationEntry(id: 'Levitate Idle',       name: 'Levitate',           category: 'Special',    durationSecs: 2.0,  compatibleWith: [SkeletonType.human]),
+  AnimationEntry(id: 'Backflip',           name: 'Backflip',            category: 'Special',    durationSecs: 1.2,  compatibleWith: [SkeletonType.human]),
+
+  // ── Fox / Quadruped ─────────────────────────────────────────────────────
+  AnimationEntry(id: 'Idle',               name: 'Idle',                category: 'Basic',      durationSecs: 3.0,  compatibleWith: [SkeletonType.quadruped]),
+  AnimationEntry(id: 'Sit',               name: 'Sit',                  category: 'Basic',      durationSecs: 1.5,  compatibleWith: [SkeletonType.quadruped]),
+  AnimationEntry(id: 'Walk',              name: 'Walk',                  category: 'Locomotion', durationSecs: 1.0,  compatibleWith: [SkeletonType.quadruped]),
+  AnimationEntry(id: 'Run',               name: 'Run',                   category: 'Locomotion', durationSecs: 0.6,  compatibleWith: [SkeletonType.quadruped]),
+  AnimationEntry(id: 'Jump',              name: 'Jump',                  category: 'Locomotion', durationSecs: 1.5,  compatibleWith: [SkeletonType.quadruped]),
+  AnimationEntry(id: 'Trot',              name: 'Trot',                  category: 'Locomotion', durationSecs: 0.8,  compatibleWith: [SkeletonType.quadruped]),
+  AnimationEntry(id: 'Gallop',            name: 'Gallop',                category: 'Locomotion', durationSecs: 0.5,  compatibleWith: [SkeletonType.quadruped]),
+  AnimationEntry(id: 'Bark',              name: 'Bark',                  category: 'Emotes',     durationSecs: 1.0,  compatibleWith: [SkeletonType.quadruped]),
+  AnimationEntry(id: 'Howl',              name: 'Howl',                  category: 'Emotes',     durationSecs: 2.5,  compatibleWith: [SkeletonType.quadruped]),
+  AnimationEntry(id: 'Death',             name: 'Death',                 category: 'Combat',     durationSecs: 2.0,  compatibleWith: [SkeletonType.quadruped]),
+  AnimationEntry(id: 'Bite',              name: 'Bite',                  category: 'Combat',     durationSecs: 0.8,  compatibleWith: [SkeletonType.quadruped]),
+
+  // ── Bird ────────────────────────────────────────────────────────────────
+  AnimationEntry(id: 'Idle',              name: 'Idle',                  category: 'Basic',      durationSecs: 2.0,  compatibleWith: [SkeletonType.bird]),
+  AnimationEntry(id: 'Rest Pose',         name: 'Rest',                  category: 'Basic',      durationSecs: 1.0,  compatibleWith: [SkeletonType.bird]),
+  AnimationEntry(id: 'Walk',              name: 'Walk',                  category: 'Locomotion', durationSecs: 1.0,  compatibleWith: [SkeletonType.bird]),
+  AnimationEntry(id: 'Flap',             name: 'Flap',                   category: 'Locomotion', durationSecs: 0.6,  compatibleWith: [SkeletonType.bird]),
+  AnimationEntry(id: 'Glide',            name: 'Glide',                  category: 'Locomotion', durationSecs: 3.0,  compatibleWith: [SkeletonType.bird]),
+  AnimationEntry(id: 'Death',            name: 'Death',                  category: 'Combat',     durationSecs: 1.5,  compatibleWith: [SkeletonType.bird]),
+
+  // ── Dragon ──────────────────────────────────────────────────────────────
+  AnimationEntry(id: 'Idle',             name: 'Idle',                   category: 'Basic',      durationSecs: 4.0,  compatibleWith: [SkeletonType.dragon]),
+  AnimationEntry(id: 'Rest Pose',        name: 'Rest',                   category: 'Basic',      durationSecs: 1.0,  compatibleWith: [SkeletonType.dragon]),
+  AnimationEntry(id: 'Walk',             name: 'Walk',                   category: 'Locomotion', durationSecs: 1.2,  compatibleWith: [SkeletonType.dragon]),
+  AnimationEntry(id: 'Fly Flap',         name: 'Fly Flap',               category: 'Locomotion', durationSecs: 1.0,  compatibleWith: [SkeletonType.dragon]),
+  AnimationEntry(id: 'Fly Glide',        name: 'Fly Glide',              category: 'Locomotion', durationSecs: 3.0,  compatibleWith: [SkeletonType.dragon]),
+
+  // ── Kaiju ───────────────────────────────────────────────────────────────
+  AnimationEntry(id: 'Idle',             name: 'Idle',                   category: 'Basic',      durationSecs: 4.0,  compatibleWith: [SkeletonType.kaiju]),
+  AnimationEntry(id: 'Walk',             name: 'Walk',                   category: 'Locomotion', durationSecs: 1.5,  compatibleWith: [SkeletonType.kaiju]),
+  AnimationEntry(id: 'Attack',           name: 'Attack',                 category: 'Combat',     durationSecs: 1.5,  compatibleWith: [SkeletonType.kaiju]),
+  AnimationEntry(id: 'Roar',             name: 'Roar',                   category: 'Emotes',     durationSecs: 2.5,  compatibleWith: [SkeletonType.kaiju]),
+  AnimationEntry(id: 'Death',            name: 'Death',                  category: 'Combat',     durationSecs: 2.5,  compatibleWith: [SkeletonType.kaiju]),
+  AnimationEntry(id: 'Hit',              name: 'Hit',                    category: 'Combat',     durationSecs: 0.5,  compatibleWith: [SkeletonType.kaiju]),
+
+  // ── Spider ──────────────────────────────────────────────────────────────
+  AnimationEntry(id: 'Idle',             name: 'Idle',                   category: 'Basic',      durationSecs: 2.0,  compatibleWith: [SkeletonType.spider]),
+  AnimationEntry(id: 'Walk',             name: 'Walk',                   category: 'Locomotion', durationSecs: 0.8,  compatibleWith: [SkeletonType.spider]),
+  AnimationEntry(id: 'Jump',             name: 'Jump',                   category: 'Locomotion', durationSecs: 1.2,  compatibleWith: [SkeletonType.spider]),
+  AnimationEntry(id: 'Attack',           name: 'Attack',                 category: 'Combat',     durationSecs: 0.8,  compatibleWith: [SkeletonType.spider]),
+  AnimationEntry(id: 'Bite',             name: 'Bite',                   category: 'Combat',     durationSecs: 0.6,  compatibleWith: [SkeletonType.spider]),
+  AnimationEntry(id: 'Death',            name: 'Death',                  category: 'Combat',     durationSecs: 2.0,  compatibleWith: [SkeletonType.spider]),
+
+  // ── Snake ───────────────────────────────────────────────────────────────
+  AnimationEntry(id: 'Idle',             name: 'Idle',                   category: 'Basic',      durationSecs: 3.0,  compatibleWith: [SkeletonType.snake]),
+  AnimationEntry(id: 'Coiled',           name: 'Coiled',                 category: 'Basic',      durationSecs: 2.0,  compatibleWith: [SkeletonType.snake]),
+  AnimationEntry(id: 'Side winding',     name: 'Sidewind',               category: 'Locomotion', durationSecs: 1.5,  compatibleWith: [SkeletonType.snake]),
+  AnimationEntry(id: 'Bite',             name: 'Bite',                   category: 'Combat',     durationSecs: 0.6,  compatibleWith: [SkeletonType.snake]),
+  AnimationEntry(id: 'Death',            name: 'Death',                  category: 'Combat',     durationSecs: 2.0,  compatibleWith: [SkeletonType.snake]),
+  AnimationEntry(id: 'Dance',            name: 'Dance',                  category: 'Emotes',     durationSecs: 3.0,  compatibleWith: [SkeletonType.snake]),
 ];

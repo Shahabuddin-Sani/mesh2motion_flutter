@@ -1,7 +1,7 @@
-import 'package:flutter/material.dart' hide Colors; 
+import 'package:flutter/material.dart' hide Colors;
+import '../services/mesh2motion_scene.dart';
 import 'package:provider/provider.dart';
 import '../models/editor_state.dart';
-import '../services/mesh2motion_scene.dart';
 import '../theme/app_theme.dart';
 
 class ViewportOverlay extends StatelessWidget {
