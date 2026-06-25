@@ -5,7 +5,6 @@ import 'package:vector_math/vector_math.dart';
 import 'm2m_resources.dart';
 import '../models/editor_state.dart';
 
-// Internal macbear_3d imports for native model loading
 // ignore: implementation_imports
 import 'package:macbear_3d/src/mesh/obj_loader.dart';
 // ignore: implementation_imports
@@ -15,7 +14,7 @@ import 'package:macbear_3d/src/gltf/gltf_parser.dart';
 // ignore: implementation_imports
 import 'package:macbear_3d/src/mesh/animator.dart';
 
-/// The native Mesh2Motion engine that wraps and extends macbear_3d's AppEngine.
+/// Native Mesh2Motion engine wrapper around macbear_3d's AppEngine.
 class M2MEngine extends ChangeNotifier {
   static final M2MEngine instance = M2MEngine._internal();
   M2MEngine._internal();
@@ -26,22 +25,17 @@ class M2MEngine extends ChangeNotifier {
   M3Scene? _currentScene;
   M3Scene? get currentScene => _currentScene;
 
-  /// The underlying macbear_3d engine instance
   M3AppEngine get core => M3AppEngine.instance;
 
-  /// Initialize the engine
   Future<void> initialize({required int width, required int height, required double dpr}) async {
     if (_initialized) return;
-
     M2MLogger.info('Engine: Initializing ($width x $height @ $dpr)');
     await core.initApp(width: width, height: height, dpr: dpr);
-    
     _initialized = true;
     M2MLogger.info('Engine: Initialized');
     notifyListeners();
   }
 
-  /// Sets the active scene
   Future<void> setScene(M3Scene scene) async {
     M2MLogger.info('Engine: Setting active scene: ${scene.runtimeType}');
     _currentScene = scene;
@@ -49,16 +43,12 @@ class M2MEngine extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Load a model from a path (asset, URL, or registered memory buffer).
-  /// Returns the constructed M3Mesh.
   Future<M3Mesh> loadMesh(String path) async {
     M2MLogger.info('Engine: Loading mesh from $path');
-    
     try {
       final bytes = await loadRawBuffer(path);
-      
       final ext = path.split('.').last.toLowerCase().split('?').first;
-      
+
       if (ext == 'obj') {
         final geom = M3ObjLoader.parse(String.fromCharCodes(bytes), path);
         return M3Mesh(geom);
@@ -66,7 +56,7 @@ class M2MEngine extends ChangeNotifier {
         final doc = await M3GltfLoader.loadFromBytes(bytes, path);
         return _constructMeshFromDoc(doc);
       } else {
-        throw UnsupportedError('Unsupported model format: $ext');
+        throw UnsupportedError('Unsupported format: $ext');
       }
     } catch (e, stack) {
       M2MLogger.error('Engine: Failed to load mesh from $path', e, stack);
@@ -74,13 +64,11 @@ class M2MEngine extends ChangeNotifier {
     }
   }
 
-  /// Load raw bytes from a path (asset, URL, or memory buffer).
   Future<Uint8List> loadRawBuffer(String path) async {
     final buf = await M2MResourceManager.instance.loadBuffer(path);
     return buf.asUint8List();
   }
 
-  /// Helper to construct M3Mesh from GltfDocument.
   M3Mesh _constructMeshFromDoc(GltfDocument doc) {
     final List<M3SubMesh> primitives = [];
     if (doc.meshes.isNotEmpty) {
@@ -88,7 +76,8 @@ class M2MEngine extends ChangeNotifier {
       for (final primitive in gltfMesh.primitives) {
         final geom = M3GltfGeom.fromPrimitive(primitive);
         M3Material? mtr;
-        if (primitive.materialIndex != null && primitive.materialIndex! < doc.materials.length) {
+        if (primitive.materialIndex != null &&
+            primitive.materialIndex! < doc.materials.length) {
           mtr = M3Material.fromGltf(doc.materials[primitive.materialIndex!], doc);
         }
         primitives.add(M3SubMesh(geom, material: mtr));
@@ -123,7 +112,9 @@ class M2MEngine extends ChangeNotifier {
       skin = M3Skin(
         gltfSkin.joints.length,
         inverseBindMatrices: inverseMatrices,
-        jointNodes: gltfSkin.joints.map<GltfNode>((index) => doc.nodes[index] as GltfNode).toList(),
+        jointNodes: gltfSkin.joints
+            .map<GltfNode>((index) => doc.nodes[index] as GltfNode)
+            .toList(),
       );
     }
 
@@ -132,9 +123,11 @@ class M2MEngine extends ChangeNotifier {
     mesh.initMatrix.setFrom(matNode);
     mesh.nodes = doc.nodes.cast<GltfNode>();
 
-    // Bake in any animations that are already in the model GLB
+    // Bake in animations already embedded in the model GLB
     if (doc.animations.isNotEmpty) {
-      final nodeMap = {for (int i = 0; i < doc.nodes.length; i++) i: doc.nodes[i] as GltfNode};
+      final nodeMap = <int, GltfNode>{
+        for (int i = 0; i < doc.nodes.length; i++) i: doc.nodes[i] as GltfNode
+      };
       mesh.animator = M3Animator(doc.animations.cast<GltfAnimation>(), nodeMap);
       mesh.animator!.isPlaying = false;
       M2MLogger.info('Engine: Model has ${doc.animations.length} built-in animations');
