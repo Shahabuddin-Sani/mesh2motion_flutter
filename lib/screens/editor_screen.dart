@@ -32,14 +32,20 @@ class _EditorScreenState extends State<EditorScreen> {
     M2MLogger.info('EditorScreen: initState');
     _scene = Mesh2MotionScene();
 
-    // Hook into M2MEngine
-    M2MEngine.instance.core.onDidInit = _onEngineReady;
+    // Listen to M2MEngine instead of using onDidInit, which suffers from a
+    // race condition: both EditorScreen and M2MView use addPostFrameCallback,
+    // so initApp() may complete before onDidInit is assigned, leaving the
+    // callback never fired and the loading spinner stuck forever.
+    //
+    // M2MEngine calls notifyListeners() after initialization completes, so
+    // listening here is reliable regardless of frame ordering.
+    M2MEngine.instance.addListener(_onEngineChanged);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _provider = Provider.of<EditorProvider>(context, listen: false);
         _provider!.addListener(_onProviderStateChanged);
-        
+
         // Auto-select human skeleton on first load
         if (_provider!.state.selectedSkeleton == null) {
           _provider!.selectSkeleton(SkeletonType.human);
@@ -50,8 +56,16 @@ class _EditorScreenState extends State<EditorScreen> {
 
   @override
   void dispose() {
+    M2MEngine.instance.removeListener(_onEngineChanged);
     _provider?.removeListener(_onProviderStateChanged);
     super.dispose();
+  }
+
+  /// Called whenever M2MEngine notifies — including after initApp completes.
+  void _onEngineChanged() {
+    if (!_sceneReady && M2MEngine.instance.isInitialized) {
+      _onEngineReady();
+    }
   }
 
   void _onProviderStateChanged() {
@@ -86,7 +100,9 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 
   Future<void> _onEngineReady() async {
-    M2MLogger.info('EditorScreen: Engine ready callback triggered');
+    // Guard: only run once
+    if (_sceneReady) return;
+    M2MLogger.info('EditorScreen: Engine ready — attaching scene');
     try {
       await M2MEngine.instance.setScene(_scene);
       M2MLogger.info('EditorScreen: Scene attached to engine');

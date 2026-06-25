@@ -252,43 +252,34 @@ class Mesh2MotionScene extends M3Scene {
   ///
   /// macbear_3d uses Z-up. A model exported from Blender with Z-up will be
   /// correct. A model exported with Y-up (e.g. standard glTF) will appear
-  /// lying flat because glTF's Y-up conflicts with macbear's Z-up.
+  /// Fix model orientation.
   ///
-  /// We detect Y-up models (large Y extent, small Z extent = lying sideways)
-  /// and rotate 90° around X to convert Y-up → Z-up.
+  /// All bundled animation GLBs have a -90 deg X rotation baked into the root
+  /// bone (quaternion [-0.707, 0, 0, 0.707]). The skeleton already converts
+  /// from glTF Y-up geometry space to macbear Z-up world space. We must NOT
+  /// apply any additional entity rotation, or the model will be double-rotated
+  /// and appear lying flat on its back.
   void _fixModelOrientation(M3Entity entity) {
-    entity.updateBounds();
-    final bounds = entity.worldBounding.aabb;
-    final size = bounds.max - bounds.min;
-    final sx = size.x, sy = size.y, sz = size.z;
-
-    M2MLogger.info('Scene: Model bounds size = (${sx.toStringAsFixed(2)}, ${sy.toStringAsFixed(2)}, ${sz.toStringAsFixed(2)})');
-
-    // In macbear's Z-up world: a standing figure should be tall on Z.
-    // If Y is the dominant axis and Z is small, it's Y-up glTF.
-    if (sy > sz * 1.5 && sy > sx * 1.0) {
-      M2MLogger.info('Scene: Detected Y-up model → rotating +90° around X to stand up');
-      // Rotate -90° around X: Y becomes Z (Y-up → Z-up)
-      entity.matrix.setRotationX(-pi / 2);
-    } else {
-      M2MLogger.info('Scene: Model orientation already Z-up (or ambiguous) — no rotation applied');
-    }
+    // No-op: root bone already handles Y-up to Z-up conversion.
+    M2MLogger.info('Scene: Skipping auto-rotation — root bone handles coordinate conversion');
   }
 
   void _fitModelInView(M3Entity entity) {
     entity.updateBounds();
     final bounds = entity.worldBounding.aabb;
     final size = bounds.max - bounds.min;
+    // The raw geometry is in Y-up space (tall in Y before bone rotation).
+    // Use the largest dimension across all axes as the height proxy.
     final maxDim = [size.x, size.y, size.z].reduce(max);
 
     if (maxDim > 0) {
       final scale = 2.0 / maxDim;
       entity.scale = vm.Vector3.all(scale);
-
-      final center = (bounds.max + bounds.min) / 2;
-      // Z-up: put feet at Z=0
-      entity.position = vm.Vector3(-center.x * scale, -center.y * scale, -bounds.min.z * scale);
+      final cx = (bounds.max.x + bounds.min.x) / 2;
+      final cy = (bounds.max.y + bounds.min.y) / 2;
+      entity.position = vm.Vector3(-cx * scale, -cy * scale, -bounds.min.z * scale);
     }
+    M2MLogger.info('Scene: Model fitted to view (scale=${entity.scale.x.toStringAsFixed(3)})');
   }
 
   void rebuildBoneGizmos() {
@@ -325,13 +316,11 @@ class Mesh2MotionScene extends M3Scene {
       final gizmo = _nodeToGizmo[node.name];
       if (gizmo == null) continue;
 
-      // Use the node's computed world matrix position (set by animator hierarchy update)
-      final worldPos = node.worldMatrix.getTranslation();
-      // Transform from model local → entity world
-      final entityMat = _modelEntity!.matrix;
-      final entityScale = _modelEntity!.scale.x;
-      final pos = entityMat.transform3(worldPos.clone()) * entityScale + _modelEntity!.position;
-      gizmo.position = pos;
+      // node.worldMatrix is the bone's transform in the GLB local space,
+      // computed by the animator's _updateHierarchy(). Transform it into
+      // world space using the entity's TRS matrix (entity.matrix = compose(pos,rot,scale)).
+      final boneLocalPos = node.worldMatrix.getTranslation();
+      gizmo.position = _modelEntity!.matrix.transform3(boneLocalPos.clone());
     }
   }
 

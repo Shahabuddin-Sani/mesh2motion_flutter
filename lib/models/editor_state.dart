@@ -91,36 +91,39 @@ class SkeletonAssets {
 }
 
 const Map<SkeletonType, SkeletonAssets> kSkeletonAssets = {
+  // For each skeleton the animation GLB IS the complete rigged character
+  // (mesh + skeleton + animations). The model-*.glb files are unrigged meshes
+  // and are not used for playback. Load the base animation GLB as the model,
+  // and list any addon GLBs whose extra animations should be merged in.
   SkeletonType.human: SkeletonAssets(
-    modelGlb: 'assets/models/model-human.glb',
+    modelGlb: 'assets/animations/human-base-animations.glb',
     animGlbs: [
-      'assets/animations/human-base-animations.glb',
       'assets/animations/human-addon-animations.glb',
     ],
   ),
   SkeletonType.quadruped: SkeletonAssets(
-    modelGlb: 'assets/models/model-fox.glb',
-    animGlbs: ['assets/animations/fox-animations.glb'],
+    modelGlb: 'assets/animations/fox-animations.glb',
+    animGlbs: [],
   ),
   SkeletonType.bird: SkeletonAssets(
-    modelGlb: 'assets/models/model-bird.glb',
-    animGlbs: ['assets/animations/bird-animations.glb'],
+    modelGlb: 'assets/animations/bird-animations.glb',
+    animGlbs: [],
   ),
   SkeletonType.dragon: SkeletonAssets(
-    modelGlb: 'assets/models/model-dragon.glb',
-    animGlbs: ['assets/animations/dragon-animations.glb'],
+    modelGlb: 'assets/animations/dragon-animations.glb',
+    animGlbs: [],
   ),
   SkeletonType.kaiju: SkeletonAssets(
-    modelGlb: 'assets/models/model-kaiju.glb',
-    animGlbs: ['assets/animations/kaiju-animations.glb'],
+    modelGlb: 'assets/animations/kaiju-animations.glb',
+    animGlbs: [],
   ),
   SkeletonType.spider: SkeletonAssets(
-    modelGlb: 'assets/models/model-spider.glb',
-    animGlbs: ['assets/animations/spider-animations.glb'],
+    modelGlb: 'assets/animations/spider-animations.glb',
+    animGlbs: [],
   ),
   SkeletonType.snake: SkeletonAssets(
-    modelGlb: 'assets/models/model-snake.glb',
-    animGlbs: ['assets/animations/snake-animations.glb'],
+    modelGlb: 'assets/animations/snake-animations.glb',
+    animGlbs: [],
   ),
 };
 
