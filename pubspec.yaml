@@ -1,0 +1,35 @@
+name: mesh2motion_flutter
+description: 3D Character Rigging & Animation Editor - Flutter port of ComfyUI-mesh2motion using macbear_3d
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  macbear_3d:
+    git:
+      url: https://github.com/macbearchen/macbear_3d.git
+      ref: eb06b59df4a68547bfee92f51389e6f0bd25046d
+  vector_math: ^2.2.0
+  file_picker: ^8.0.0
+  path_provider: ^2.1.2
+  shared_preferences: ^2.2.3
+  provider: ^6.1.2
+  http: ^1.2.1
+  permission_handler: ^11.3.1
+  url_launcher: ^6.3.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/models/
+    - assets/animations/
+    - assets/icons/
